@@ -21,29 +21,30 @@
 
         #feed {
             width: 100%;
-            height: 520px;
+            height: 400px;
             overflow-y: auto;
-            padding: 10px;
+            overflow-x: hidden;
+            padding: 8px;
         }
 
         .post {
             background: #ffffff;
             border: 1px solid #ddd;
             border-radius: 10px;
-            padding: 14px;
-            margin-bottom: 12px;
+            padding: 12px;
+            margin-bottom: 10px;
         }
 
         .post-header {
             display: flex;
             align-items: center;
-            gap: 9px;
-            margin-bottom: 10px;
+            gap: 8px;
+            margin-bottom: 9px;
         }
 
         .avatar {
-            width: 38px;
-            height: 38px;
+            width: 36px;
+            height: 36px;
             border-radius: 50%;
             object-fit: cover;
             flex-shrink: 0;
@@ -70,7 +71,7 @@
             font-size: 14px;
             line-height: 1.45;
             white-space: pre-wrap;
-            word-wrap: break-word;
+            overflow-wrap: anywhere;
         }
 
         .images {
@@ -90,7 +91,7 @@
         .video {
             display: block;
             width: 100%;
-            max-height: 420px;
+            max-height: 360px;
             margin-top: 10px;
             border-radius: 7px;
             background: #000;
@@ -106,7 +107,7 @@
 
         .post-link {
             display: inline-block;
-            margin-top: 10px;
+            margin-top: 9px;
             color: #0085ff;
             text-decoration: none;
             font-size: 12px;
@@ -123,13 +124,6 @@
             font-size: 13px;
         }
 
-        #loading {
-            padding: 15px;
-            text-align: center;
-            color: #777;
-            font-size: 12px;
-        }
-
         #feed::-webkit-scrollbar {
             width: 7px;
         }
@@ -137,6 +131,10 @@
         #feed::-webkit-scrollbar-thumb {
             background: #bbb;
             border-radius: 10px;
+        }
+
+        #feed::-webkit-scrollbar-track {
+            background: transparent;
         }
     </style>
 </head>
@@ -150,49 +148,19 @@
 <script>
 
 const ACTOR = "bune.bsky.social";
+const LIMIT = 3;
 
-const feed = document.getElementById("feed");
+async function loadFeed() {
 
-let cursor = null;
-let loading = false;
-let finished = false;
-
-
-/* ---------------------------------
-   LOAD POSTS
---------------------------------- */
-
-async function loadPosts() {
-
-    if (loading || finished) {
-        return;
-    }
-
-    loading = true;
-
-    const oldLoading = document.getElementById("loading");
-
-    if (!oldLoading) {
-
-        const loadingElement = document.createElement("div");
-
-        loadingElement.id = "loading";
-        loadingElement.textContent = "Loading more posts…";
-
-        feed.appendChild(loadingElement);
-    }
+    const feed = document.getElementById("feed");
 
     try {
 
-        let url =
+        const url =
             "https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed" +
             "?actor=" + encodeURIComponent(ACTOR) +
-            "&limit=50" +
+            "&limit=" + LIMIT +
             "&filter=posts_no_replies";
-
-        if (cursor) {
-            url += "&cursor=" + encodeURIComponent(cursor);
-        }
 
         const response = await fetch(url);
 
@@ -202,81 +170,32 @@ async function loadPosts() {
 
         const data = await response.json();
 
-        const loadingElement =
-            document.getElementById("loading");
-
-        if (loadingElement) {
-            loadingElement.remove();
-        }
+        feed.innerHTML = "";
 
         if (!data.feed || data.feed.length === 0) {
 
-            finished = true;
-
-            const end = document.createElement("div");
-
-            end.id = "loading";
-            end.textContent = "No more posts.";
-
-            feed.appendChild(end);
+            feed.innerHTML =
+                '<div class="status">No posts found.</div>';
 
             return;
         }
 
-
-        /* Remove initial message */
-
-        const status =
-            feed.querySelector(".status");
-
-        if (status) {
-            status.remove();
-        }
-
-
-        /* Add posts */
-
         data.feed.forEach(item => {
 
-            const post = item.post;
-
-            addPost(post);
+            addPost(item.post);
 
         });
 
-
-        /* Next page */
-
-        cursor = data.cursor || null;
-
-        if (!cursor) {
-            finished = true;
-        }
-
-    }
-
-    catch (error) {
+    } catch (error) {
 
         console.error(error);
 
-        const loadingElement =
-            document.getElementById("loading");
-
-        if (loadingElement) {
-            loadingElement.remove();
-        }
-
-        const errorElement =
-            document.createElement("div");
-
-        errorElement.id = "loading";
-        errorElement.textContent =
-            "Unable to load more posts.";
-
-        feed.appendChild(errorElement);
+        feed.innerHTML = `
+            <div class="status">
+                Unable to load Bluesky posts.
+            </div>
+        `;
     }
-
-    loading = false;
 }
 
 
@@ -295,7 +214,7 @@ function addPost(post) {
     postElement.className = "post";
 
 
-    /* Date */
+    /* DATE */
 
     const date =
         new Date(record.createdAt);
@@ -308,14 +227,12 @@ function addPost(post) {
         });
 
 
-    /* Media */
+    /* MEDIA */
 
     let mediaHTML = "";
 
 
-    /*
-       IMAGES
-    */
+    /* IMAGES */
 
     if (
         post.embed &&
@@ -341,9 +258,7 @@ function addPost(post) {
     }
 
 
-    /*
-       VIDEO
-    */
+    /* VIDEO */
 
     else if (
         post.embed &&
@@ -369,9 +284,7 @@ function addPost(post) {
     }
 
 
-    /*
-       VIDEO THUMBNAIL
-    */
+    /* VIDEO THUMBNAIL */
 
     else if (
         post.embed &&
@@ -397,9 +310,7 @@ function addPost(post) {
     }
 
 
-    /*
-       AVATAR
-    */
+    /* AVATAR */
 
     const avatarHTML =
         author.avatar
@@ -414,17 +325,13 @@ function addPost(post) {
         : "";
 
 
-    /*
-       POST URL
-    */
+    /* POST URL */
 
     const postURL =
         getPostURL(post);
 
 
-    /*
-       HTML
-    */
+    /* POST HTML */
 
     postElement.innerHTML = `
 
@@ -453,14 +360,11 @@ function addPost(post) {
 
         </div>
 
-
         <div class="text">
             ${escapeHTML(record.text || "")}
         </div>
 
-
         ${mediaHTML}
-
 
         <a
             class="post-link"
@@ -473,13 +377,12 @@ function addPost(post) {
 
     `;
 
-
     feed.appendChild(postElement);
 }
 
 
 /* ---------------------------------
-   BLUESKY POST URL
+   BLUESKY URL
 --------------------------------- */
 
 function getPostURL(post) {
@@ -499,7 +402,7 @@ function getPostURL(post) {
 
 
 /* ---------------------------------
-   ESCAPE HTML
+   SECURITY
 --------------------------------- */
 
 function escapeHTML(text) {
@@ -514,39 +417,19 @@ function escapeHTML(text) {
 
 
 /* ---------------------------------
-   INFINITE SCROLL
+   LOAD
 --------------------------------- */
 
-feed.addEventListener("scroll", () => {
-
-    const distanceFromBottom =
-        feed.scrollHeight -
-        feed.scrollTop -
-        feed.clientHeight;
-
-    if (distanceFromBottom < 300) {
-
-        loadPosts();
-    }
-
-});
+loadFeed();
 
 
 /* ---------------------------------
-   INITIAL LOAD
---------------------------------- */
-
-loadPosts();
-
-
-/* ---------------------------------
-   REFRESH NEW POSTS
-   Every 5 minutes
+   REFRESH EVERY 5 MINUTES
 --------------------------------- */
 
 setInterval(() => {
 
-    location.reload();
+    loadFeed();
 
 }, 5 * 60 * 1000);
 
