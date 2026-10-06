@@ -46,6 +46,7 @@
             height: 38px;
             border-radius: 50%;
             object-fit: cover;
+            flex-shrink: 0;
         }
 
         .author {
@@ -62,6 +63,7 @@
             margin-left: auto;
             font-size: 11px;
             color: #888;
+            white-space: nowrap;
         }
 
         .text {
@@ -72,17 +74,34 @@
         }
 
         .images {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 6px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
             margin-top: 10px;
         }
 
         .images img {
+            display: block;
             width: 100%;
-            max-height: 220px;
-            object-fit: cover;
+            height: auto;
             border-radius: 7px;
+        }
+
+        .video {
+            display: block;
+            width: 100%;
+            max-height: 420px;
+            margin-top: 10px;
+            border-radius: 7px;
+            background: #000;
+        }
+
+        .video-thumb {
+            display: block;
+            width: 100%;
+            height: auto;
+            border-radius: 7px;
+            margin-top: 10px;
         }
 
         .post-link {
@@ -104,6 +123,13 @@
             font-size: 13px;
         }
 
+        #loading {
+            padding: 15px;
+            text-align: center;
+            color: #777;
+            font-size: 12px;
+        }
+
         #feed::-webkit-scrollbar {
             width: 7px;
         }
@@ -122,18 +148,51 @@
 </div>
 
 <script>
-const ACTOR = "bune.bsky.social";
-const LIMIT = 3;
 
-async function loadFeed() {
-    const feed = document.getElementById("feed");
+const ACTOR = "bune.bsky.social";
+
+const feed = document.getElementById("feed");
+
+let cursor = null;
+let loading = false;
+let finished = false;
+
+
+/* ---------------------------------
+   LOAD POSTS
+--------------------------------- */
+
+async function loadPosts() {
+
+    if (loading || finished) {
+        return;
+    }
+
+    loading = true;
+
+    const oldLoading = document.getElementById("loading");
+
+    if (!oldLoading) {
+
+        const loadingElement = document.createElement("div");
+
+        loadingElement.id = "loading";
+        loadingElement.textContent = "Loading more posts…";
+
+        feed.appendChild(loadingElement);
+    }
 
     try {
-        const url =
+
+        let url =
             "https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed" +
             "?actor=" + encodeURIComponent(ACTOR) +
-            "&limit=" + LIMIT +
+            "&limit=50" +
             "&filter=posts_no_replies";
+
+        if (cursor) {
+            url += "&cursor=" + encodeURIComponent(cursor);
+        }
 
         const response = await fetch(url);
 
@@ -143,120 +202,354 @@ async function loadFeed() {
 
         const data = await response.json();
 
-        feed.innerHTML = "";
+        const loadingElement =
+            document.getElementById("loading");
+
+        if (loadingElement) {
+            loadingElement.remove();
+        }
 
         if (!data.feed || data.feed.length === 0) {
-            feed.innerHTML = '<div class="status">No posts found.</div>';
+
+            finished = true;
+
+            const end = document.createElement("div");
+
+            end.id = "loading";
+            end.textContent = "No more posts.";
+
+            feed.appendChild(end);
+
             return;
         }
 
+
+        /* Remove initial message */
+
+        const status =
+            feed.querySelector(".status");
+
+        if (status) {
+            status.remove();
+        }
+
+
+        /* Add posts */
+
         data.feed.forEach(item => {
+
             const post = item.post;
-            const record = post.record;
-            const author = post.author;
 
-            const postElement = document.createElement("div");
-            postElement.className = "post";
+            addPost(post);
 
-            const date = new Date(record.createdAt);
-
-            const formattedDate = date.toLocaleDateString("en-GB", {
-                day: "2-digit",
-                month: "2-digit",
-                year: "numeric"
-            });
-
-            let imagesHTML = "";
-
-            if (
-                post.embed &&
-                post.embed.images &&
-                Array.isArray(post.embed.images)
-            ) {
-                imagesHTML = `
-                    <div class="images">
-                        ${post.embed.images.map(image => `
-                            <img
-                                src="${image.thumb}"
-                                alt=""
-                                loading="lazy"
-                            >
-                        `).join("")}
-                    </div>
-                `;
-            }
-
-            const rkey = post.uri.split("/").pop();
-
-            const postURL =
-                "https://bsky.app/profile/" +
-                encodeURIComponent(author.handle) +
-                "/post/" +
-                encodeURIComponent(rkey);
-
-            const avatarHTML = author.avatar
-                ? `<img class="avatar" src="${author.avatar}" alt="">`
-                : "";
-
-            postElement.innerHTML = `
-                <div class="post-header">
-                    ${avatarHTML}
-
-                    <div>
-                        <div class="author">
-                            ${escapeHTML(author.displayName || author.handle)}
-                        </div>
-
-                        <div class="handle">
-                            @${escapeHTML(author.handle)}
-                        </div>
-                    </div>
-
-                    <div class="date">
-                        ${formattedDate}
-                    </div>
-                </div>
-
-                <div class="text">
-                    ${escapeHTML(record.text || "")}
-                </div>
-
-                ${imagesHTML}
-
-                <a
-                    class="post-link"
-                    href="${postURL}"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                >
-                    View on Bluesky
-                </a>
-            `;
-
-            feed.appendChild(postElement);
         });
 
-    } catch (error) {
+
+        /* Next page */
+
+        cursor = data.cursor || null;
+
+        if (!cursor) {
+            finished = true;
+        }
+
+    }
+
+    catch (error) {
+
         console.error(error);
 
-        feed.innerHTML = `
-            <div class="status">
-                Unable to load Bluesky posts.
+        const loadingElement =
+            document.getElementById("loading");
+
+        if (loadingElement) {
+            loadingElement.remove();
+        }
+
+        const errorElement =
+            document.createElement("div");
+
+        errorElement.id = "loading";
+        errorElement.textContent =
+            "Unable to load more posts.";
+
+        feed.appendChild(errorElement);
+    }
+
+    loading = false;
+}
+
+
+/* ---------------------------------
+   CREATE POST
+--------------------------------- */
+
+function addPost(post) {
+
+    const record = post.record;
+    const author = post.author;
+
+    const postElement =
+        document.createElement("div");
+
+    postElement.className = "post";
+
+
+    /* Date */
+
+    const date =
+        new Date(record.createdAt);
+
+    const formattedDate =
+        date.toLocaleDateString("en-GB", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric"
+        });
+
+
+    /* Media */
+
+    let mediaHTML = "";
+
+
+    /*
+       IMAGES
+    */
+
+    if (
+        post.embed &&
+        post.embed.images &&
+        Array.isArray(post.embed.images)
+    ) {
+
+        mediaHTML = `
+            <div class="images">
+
+                ${post.embed.images.map(image => `
+
+                    <img
+                        src="${image.fullsize || image.thumb}"
+                        alt="${escapeHTML(image.alt || "")}"
+                        loading="lazy"
+                    >
+
+                `).join("")}
+
             </div>
         `;
     }
+
+
+    /*
+       VIDEO
+    */
+
+    else if (
+        post.embed &&
+        post.embed.playlist
+    ) {
+
+        mediaHTML = `
+            <video
+                class="video"
+                controls
+                playsinline
+                preload="metadata"
+                poster="${post.embed.thumbnail || ""}"
+            >
+
+                <source
+                    src="${post.embed.playlist}"
+                    type="application/x-mpegURL"
+                >
+
+            </video>
+        `;
+    }
+
+
+    /*
+       VIDEO THUMBNAIL
+    */
+
+    else if (
+        post.embed &&
+        post.embed.thumbnail
+    ) {
+
+        mediaHTML = `
+            <a
+                href="${getPostURL(post)}"
+                target="_blank"
+                rel="noopener noreferrer"
+            >
+
+                <img
+                    class="video-thumb"
+                    src="${post.embed.thumbnail}"
+                    alt="Bluesky video"
+                    loading="lazy"
+                >
+
+            </a>
+        `;
+    }
+
+
+    /*
+       AVATAR
+    */
+
+    const avatarHTML =
+        author.avatar
+        ? `
+            <img
+                class="avatar"
+                src="${author.avatar}"
+                alt=""
+                loading="lazy"
+            >
+        `
+        : "";
+
+
+    /*
+       POST URL
+    */
+
+    const postURL =
+        getPostURL(post);
+
+
+    /*
+       HTML
+    */
+
+    postElement.innerHTML = `
+
+        <div class="post-header">
+
+            ${avatarHTML}
+
+            <div>
+
+                <div class="author">
+                    ${escapeHTML(
+                        author.displayName ||
+                        author.handle
+                    )}
+                </div>
+
+                <div class="handle">
+                    @${escapeHTML(author.handle)}
+                </div>
+
+            </div>
+
+            <div class="date">
+                ${formattedDate}
+            </div>
+
+        </div>
+
+
+        <div class="text">
+            ${escapeHTML(record.text || "")}
+        </div>
+
+
+        ${mediaHTML}
+
+
+        <a
+            class="post-link"
+            href="${postURL}"
+            target="_blank"
+            rel="noopener noreferrer"
+        >
+            View on Bluesky
+        </a>
+
+    `;
+
+
+    feed.appendChild(postElement);
 }
 
+
+/* ---------------------------------
+   BLUESKY POST URL
+--------------------------------- */
+
+function getPostURL(post) {
+
+    const rkey =
+        post.uri.split("/").pop();
+
+    return (
+        "https://bsky.app/profile/" +
+        encodeURIComponent(
+            post.author.handle
+        ) +
+        "/post/" +
+        encodeURIComponent(rkey)
+    );
+}
+
+
+/* ---------------------------------
+   ESCAPE HTML
+--------------------------------- */
+
 function escapeHTML(text) {
-    const div = document.createElement("div");
+
+    const div =
+        document.createElement("div");
+
     div.textContent = text;
+
     return div.innerHTML;
 }
 
-loadFeed();
 
-/* Update every 5 minutes */
-setInterval(loadFeed, 5 * 60 * 1000);
+/* ---------------------------------
+   INFINITE SCROLL
+--------------------------------- */
+
+feed.addEventListener("scroll", () => {
+
+    const distanceFromBottom =
+        feed.scrollHeight -
+        feed.scrollTop -
+        feed.clientHeight;
+
+    if (distanceFromBottom < 300) {
+
+        loadPosts();
+    }
+
+});
+
+
+/* ---------------------------------
+   INITIAL LOAD
+--------------------------------- */
+
+loadPosts();
+
+
+/* ---------------------------------
+   REFRESH NEW POSTS
+   Every 5 minutes
+--------------------------------- */
+
+setInterval(() => {
+
+    location.reload();
+
+}, 5 * 60 * 1000);
+
 </script>
 
 </body>
