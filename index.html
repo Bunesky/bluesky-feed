@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Bune — Bluesky</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            color: #222;
+            font-family: Arial, Helvetica, sans-serif;
+        }
+
+        #feed {
+            width: 100%;
+            height: 520px;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .post {
+            background: #ffffff;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            padding: 14px;
+            margin-bottom: 12px;
+        }
+
+        .post-header {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            margin-bottom: 10px;
+        }
+
+        .avatar {
+            width: 38px;
+            height: 38px;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+
+        .author {
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .handle {
+            font-size: 12px;
+            color: #777;
+        }
+
+        .date {
+            margin-left: auto;
+            font-size: 11px;
+            color: #888;
+        }
+
+        .text {
+            font-size: 14px;
+            line-height: 1.45;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .images {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 6px;
+            margin-top: 10px;
+        }
+
+        .images img {
+            width: 100%;
+            max-height: 220px;
+            object-fit: cover;
+            border-radius: 7px;
+        }
+
+        .post-link {
+            display: inline-block;
+            margin-top: 10px;
+            color: #0085ff;
+            text-decoration: none;
+            font-size: 12px;
+        }
+
+        .post-link:hover {
+            text-decoration: underline;
+        }
+
+        .status {
+            padding: 20px;
+            text-align: center;
+            color: #777;
+            font-size: 13px;
+        }
+
+        #feed::-webkit-scrollbar {
+            width: 7px;
+        }
+
+        #feed::-webkit-scrollbar-thumb {
+            background: #bbb;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+
+<body>
+
+<div id="feed">
+    <div class="status">Loading…</div>
+</div>
+
+<script>
+const ACTOR = "bune.bsky.social";
+const LIMIT = 3;
+
+async function loadFeed() {
+    const feed = document.getElementById("feed");
+
+    try {
+        const url =
+            "https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed" +
+            "?actor=" + encodeURIComponent(ACTOR) +
+            "&limit=" + LIMIT +
+            "&filter=posts_no_replies";
+
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error("Bluesky API error");
+        }
+
+        const data = await response.json();
+
+        feed.innerHTML = "";
+
+        if (!data.feed || data.feed.length === 0) {
+            feed.innerHTML = '<div class="status">No posts found.</div>';
+            return;
+        }
+
+        data.feed.forEach(item => {
+            const post = item.post;
+            const record = post.record;
+            const author = post.author;
+
+            const postElement = document.createElement("div");
+            postElement.className = "post";
+
+            const date = new Date(record.createdAt);
+
+            const formattedDate = date.toLocaleDateString("en-GB", {
+                day: "2-digit",
+                month: "2-digit",
+                year: "numeric"
+            });
+
+            let imagesHTML = "";
+
+            if (
+                post.embed &&
+                post.embed.images &&
+                Array.isArray(post.embed.images)
+            ) {
+                imagesHTML = `
+                    <div class="images">
+                        ${post.embed.images.map(image => `
+                            <img
+                                src="${image.thumb}"
+                                alt=""
+                                loading="lazy"
+                            >
+                        `).join("")}
+                    </div>
+                `;
+            }
+
+            const rkey = post.uri.split("/").pop();
+
+            const postURL =
+                "https://bsky.app/profile/" +
+                encodeURIComponent(author.handle) +
+                "/post/" +
+                encodeURIComponent(rkey);
+
+            const avatarHTML = author.avatar
+                ? `<img class="avatar" src="${author.avatar}" alt="">`
+                : "";
+
+            postElement.innerHTML = `
+                <div class="post-header">
+                    ${avatarHTML}
+
+                    <div>
+                        <div class="author">
+                            ${escapeHTML(author.displayName || author.handle)}
+                        </div>
+
+                        <div class="handle">
+                            @${escapeHTML(author.handle)}
+                        </div>
+                    </div>
+
+                    <div class="date">
+                        ${formattedDate}
+                    </div>
+                </div>
+
+                <div class="text">
+                    ${escapeHTML(record.text || "")}
+                </div>
+
+                ${imagesHTML}
+
+                <a
+                    class="post-link"
+                    href="${postURL}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                >
+                    View on Bluesky
+                </a>
+            `;
+
+            feed.appendChild(postElement);
+        });
+
+    } catch (error) {
+        console.error(error);
+
+        feed.innerHTML = `
+            <div class="status">
+                Unable to load Bluesky posts.
+            </div>
+        `;
+    }
+}
+
+function escapeHTML(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+loadFeed();
+
+/* Update every 5 minutes */
+setInterval(loadFeed, 5 * 60 * 1000);
+</script>
+
+</body>
+</html>
